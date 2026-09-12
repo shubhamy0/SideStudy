@@ -1,0 +1,59 @@
+# ============================================
+# Study Companion .gitignore
+# ============================================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# --- Virtual Environment ---
+venv/
+.venv/
+env/
+
+# --- Gameplay Videos (user-supplied, potentially copyrighted) ---
+gameplay/**/*.mp4
+gameplay/**/*.mkv
+gameplay/**/*.webm
+gameplay/**/*.avi
+gameplay/**/*.mov
+# Keep the directory structure
+!gameplay/.gitkeep
+!gameplay/**/.gitkeep
+
+# --- User Configuration (may contain personal preferences) ---
+config.yaml
+
+# --- Logs ---
+logs/
+*.log
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- Testing ---
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Distribution ---
+*.tar.gz
+*.whl

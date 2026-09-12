@@ -1,0 +1,90 @@
+# ============================================
+# Study Companion — Default Configuration
+# ============================================
+# Copy this file to config.yaml and customize.
+# config.yaml is git-ignored; this file is not.
+
+# ---- General ----
+general:
+  # Enable/disable Study Companion entirely
+  enabled: true
+  # Polling interval in seconds (how often to check active window)
+  poll_interval: 1.0
+  # Debounce: require study activity for N consecutive polls before activating
+  # Prevents flickering when quickly switching windows
+  debounce_count: 3
+
+# ---- Study Sites (browser title matching) ----
+study_sites:
+  enabled: true
+  # Case-insensitive substring match on the active window title.
+  # Add any website/keyword you want to trigger study mode.
+  patterns:
+    - name: "LeetCode"
+      match: "leetcode"
+    - name: "Codeforces"
+      match: "codeforces"
+    - name: "PDF"
+      match: ".pdf"
+    - name: "GeeksforGeeks"
+      match: "geeksforgeeks"
+    - name: "HackerRank"
+      match: "hackerrank"
+
+# ---- YouTube ----
+youtube:
+  # When true, any YouTube tab triggers study mode.
+  # When false, YouTube is ignored.
+  study_mode: false
+
+# ---- IDE Detection (WM_CLASS matching) ----
+ide_detection:
+  enabled: true
+  # WM_CLASS values that trigger study mode.
+  # These are matched against the window's WM_CLASS property.
+  classes:
+    - name: "VS Code"
+      wm_class: "code"
+    - name: "VS Code Insiders"
+      wm_class: "code-insiders"
+    - name: "PyCharm"
+      wm_class: "jetbrains-pycharm"
+    - name: "IntelliJ IDEA"
+      wm_class: "jetbrains-idea"
+    - name: "WebStorm"
+      wm_class: "jetbrains-webstorm"
+    - name: "CLion"
+      wm_class: "jetbrains-clion"
+    - name: "Sublime Text"
+      wm_class: "sublime_text"
+    - name: "Neovide"
+      wm_class: "neovide"
+
+# ---- Gameplay ----
+gameplay:
+  # Directory containing gameplay video subdirectories
+  directory: "gameplay"
+  # Which category to play (subdirectory name), or "random" for mixed
+  category: "minecraft"
+  # Width of the gameplay panel as a percentage of screen width (15-40)
+  width_percent: 25
+  # Volume (0-100), 0 = muted
+  volume: 0
+  # Loop videos
+  loop: true
+  # Autoplay when study mode is detected
+  autoplay: true
+
+# ---- Keyboard Shortcuts ----
+shortcuts:
+  # Toggle gameplay visibility
+  toggle_gameplay: "Super+G"
+  # Toggle study companion on/off
+  toggle_enabled: "Super+Shift+S"
+
+# ---- Logging ----
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: "INFO"
+  # Log to file (in addition to console)
+  file: null

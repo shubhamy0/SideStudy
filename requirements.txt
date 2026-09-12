@@ -1,0 +1,4 @@
+# Core dependencies
+python-xlib>=0.33
+psutil>=5.9.0
+PyYAML>=6.0
