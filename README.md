@@ -1,219 +1,108 @@
-# 📚 Study Companion
+# Study Companion
 
-<div align="center">
-
-![Python Version](https://img.shields.io/badge/python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white)
-![Platform](https://img.shields.io/badge/platform-Linux%20(X11)-orange?style=for-the-badge&logo=linux&logoColor=white)
-![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
-![Research](https://img.shields.io/badge/Research-PubMed%2041880123-purple?style=for-the-badge&logo=pubmed)
-
-**An intelligent desktop productivity assistant that automatically tiles your workspace and plays passive gameplay visual stimulations (Minecraft Parkour, Subway Surfers, GTA) alongside your study content.**
-
-[Key Features](#-key-features) • [Scientific Basis](#-scientific-basis--cognitive-research) • [Installation](#-quick-start) • [Adding Videos](#-adding--playing-your-custom-videos) • [Configuration](#-configuration)
-
----
-
-</div>
-
-## 📺 Overview
-
-**Study Companion** brings the popular split-screen short-form video concept directly to your desktop workspace. Built specifically for students, developers, and researchers, the application detects active study or coding sessions and instantly splits your monitor:
+Automatically splits your monitor to play passive gameplay videos (Minecraft parkour, Subway Surfers, GTA) on the side whenever you study or code on Linux.
 
 ```text
-┌───────────────────────────────────────────────────┬──────────────────────┐
-│                                                   │                      │
-│                STUDY WORKSPACE                    │  PASSIVE GAMEPLAY    │
-│                     (~75%)                        │        (~25%)        │
-│                                                   │                      │
-│   • LeetCode / Codeforces                         │  • Minecraft Parkour │
-│   • VS Code / PyCharm / IntelliJ                  │  • Subway Surfers    │
-│   • Research PDFs & Documentation                 │  • GTA V Driving     │
-│   • YouTube Lectures (Study Mode)                 │  • Custom MP4/MKV    │
-│                                                   │                      │
-└───────────────────────────────────────────────────┴──────────────────────┘
+┌───────────────────────────────────────┬──────────────┐
+│                                       │              │
+│            STUDY CONTENT              │   GAMEPLAY   │
+│                                       │              │
+│    VS Code / LeetCode / PDFs / etc.   │  Minecraft   │
+│                                       │   Parkour    │
+│                                       │              │
+└───────────────────────────────────────┴──────────────┘
+                  ~75%                        ~25%
 ```
 
-When you focus on study tasks, the app smoothly tiles your active window to the left and launches borderless, muted, or customizable audio gameplay on the right. Switching to non-study activities immediately restores your window geometry and pauses video playback.
+## Why I Built This
+
+I built this because I focus better when there's satisfying, passive visual stimulation playing in my peripheral vision (the short-form split-screen format). Instead of manually opening a video and arranging windows every time I study or code, **Study Companion** runs in the background and does it automatically.
+
+Also, there's actual cognitive science research backing this format: a 2026 study on PubMed ([PMID: 41880123](https://pubmed.ncbi.nlm.nih.gov/41880123/), *Schuetze et al.*) found that split-screen secondary video presentations do **not** impair memory, comprehension, or increase cognitive load. Viewers adapt to the visual input naturally.
 
 ---
 
-## 🔬 Scientific Basis & Cognitive Research
+## Features
 
-Recent cognitive science research validates that passive split-screen visual stimuli do **not** impair learning or overload cognitive capacity:
-
-> 📖 **Reference:**  
-> **"Split-screen distraction: the role of extraneous visual demands in learning from video."**  
-> *Schuetze, B. A. et al.* (2026). *Cognitive Research: Principles and Implications*, 11(1).  
-> **PubMed ID:** [41880123](https://pubmed.ncbi.nlm.nih.gov/41880123/) | **DOI:** [10.1186/s41235-026-00720-2](https://doi.org/10.1186/s41235-026-00720-2) | **PMCID:** [PMC13018501](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC13018501/)
-
-### Key Research Takeaways:
-* **Adaptation over Distraction:** Preregistered within-person studies demonstrated no strong evidence that simultaneous split-screen video presentation impairs comprehension or memory retention.
-* **Cognitive Load Neutral:** Subjective and behavioral measures showed no increase in cognitive load or attentional difficulty when secondary visual streams were present.
-* **Stimulus Regulation:** Viewers adapt effectively to extraneous visual inputs, allowing secondary dynamic streams (such as passive gameplay footage) to serve as background stimulation while maintaining focus on primary educational materials.
+- **Auto-Detection:** Detects when you open study sites (LeetCode, Codeforces, arXiv, PDFs) or coding IDEs (VS Code, PyCharm, IntelliJ, Sublime, Neovide).
+- **Auto-Tiling & Restore:** Uses `wmctrl` to snap your study window to ~75% screen width and spawns an `mpv` player on the right. When you switch away from study content, your original window layout is instantly restored.
+- **System Tray Control:** Runs quietly in the Linux system tray (`AyatanaAppIndicator3`) so you can toggle it on/off, switch gameplay categories on the fly, or toggle YouTube study mode.
+- **Lightweight:** Low CPU overhead using native X11 window events and hardware-accelerated `mpv`.
 
 ---
 
-## ✨ Key Features
+## Quick Start
 
-- 🎯 **Automatic Window Detection:** Monitors active X11 windows in real-time (`_NET_WM_NAME` and `WM_CLASS`) without heavy CPU usage.
-- 📐 **Dynamic Window Tiling & Restoration:** Integrates with `wmctrl` to resize study windows to ~75% screen width and restores exact original window geometries upon exiting study mode.
-- 🎬 **Seamless mpv Player Integration:** Subprocess controller for `mpv` rendering hardware-accelerated, borderless, non-focused, looping vertical video playback.
-- 💻 **Extensive IDE & Browser Support:**
-  - **Browsers:** Firefox, Google Chrome, Chromium, Brave, Microsoft Edge.
-  - **Study Sites:** LeetCode, Codeforces, Kaggle, arXiv, PDF Viewers, YouTube (with toggle).
-  - **IDEs:** VS Code, VS Code Insiders, PyCharm, IntelliJ IDEA, WebStorm, CLion, Sublime Text, Neovide.
-- 🎛️ **Native System Tray Integration:** Built with `AyatanaAppIndicator3` / GTK3 for quick toggles, active activity status, category switching, and YouTube mode.
-
----
-
-## 🚀 Quick Start
-
-### 1. Prerequisites (Linux / X11)
-
-Install native system tools and hardware accelerated media dependencies:
+### 1. Install System Dependencies (Linux / X11)
 
 ```bash
 sudo apt update
 sudo apt install -y wmctrl mpv x11-utils python3-gi python3-gi-cairo gir1.2-ayatanaappindicator3-0.1
 ```
 
-### 2. Installation
-
-Clone the repository and install Python dependencies:
+### 2. Install Python Dependencies
 
 ```bash
-git clone https://github.com/your-username/study-companion.git
-cd study-companion
 pip install -r requirements.txt
 ```
 
-### 3. Running Study Companion
+### 3. Run
 
 ```bash
-# Launch full application (Detection + Auto-Tiling + Gameplay Player + Tray)
 python3 -m src.main
-
-# CLI Options:
-python3 -m src.main --detect-only   # Run in debug detection mode (log activities)
-python3 -m src.main --play-only     # Launch gameplay player standalone
 ```
+
+Useful command-line flags:
+* `python3 -m src.main --detect-only` — Test window detection in terminal without playing video
+* `python3 -m src.main --play-only` — Launch gameplay player standalone
 
 ---
 
-## 🎮 Adding & Playing Your Custom Videos
+## Adding Your Own Gameplay Videos
 
-You can easily supply your own gameplay clips (`.mp4`, `.mkv`, `.webm`, `.mov`):
-
-### Directory Structure
-
-Place video files into category subdirectories inside `gameplay/`:
+Drop your video files (`.mp4`, `.mkv`, `.webm`) into category subdirectories inside `gameplay/`:
 
 ```text
 gameplay/
 ├── minecraft/
-│   ├── parkour_01.mp4
-│   └── parkour_02.mp4
+│   └── parkour.mp4
 ├── subway/
-│   └── subway_surfers_01.mp4
-├── gta/
-│   └── gta5_stunt_01.mp4
-└── custom_category/
-    └── my_cool_video.mp4
+│   └── subway.mp4
+└── gta/
+    └── gta.mp4
 ```
 
-### How to Select Which Video Plays
-
-1. **Via System Tray:** Right-click the **Study Companion** tray icon → **🎮 Gameplay Category** → select your category (e.g. *Minecraft*, *Subway*, *Gta*, or *Custom_category*).
-2. **Via Config File:** Edit `config.yaml` or `config.default.yaml`:
-   ```yaml
-   gameplay:
-     category: "minecraft"  # Matches folder name in gameplay/
-     width_percent: 25      # Screen width percentage for gameplay
-     volume: 0              # 0 for muted, 1-100 for audio
-     loop: true
-   ```
-> *Note: The player automatically selects the video in the active category folder.*
+To switch video categories:
+- **System Tray:** Right-click the tray icon → **🎮 Gameplay Category** → choose your category.
+- **Config File:** Edit `config.yaml` or `config.default.yaml` (`gameplay.category: "minecraft"`).
 
 ---
 
-## ⚙️ Configuration Guide
+## Configuration
 
-Copy `config.default.yaml` to `config.yaml` to customize your setup:
+Copy `config.default.yaml` to `config.yaml` to customize:
 
 ```bash
 cp config.default.yaml config.yaml
 ```
 
-```yaml
-general:
-  enabled: true
-  check_interval: 1.0     # Detection frequency in seconds
-
-detection:
-  match_mode: "contains"
-  detect_ides: true       # Enable/disable IDE window classification
-  browser_classes:
-    - "firefox"
-    - "google-chrome"
-    - "chromium"
-    - "brave-browser"
-
-study_sites:
-  keywords:
-    - "leetcode"
-    - "codeforces"
-    - "arxiv"
-    - ".pdf"
-    - "docs.python.org"
-
-youtube:
-  study_mode: false       # Set true to classify YouTube as a study site
-  keywords:
-    - "youtube"
-
-gameplay:
-  directory: "gameplay"
-  category: "minecraft"
-  width_percent: 25
-  volume: 0               # Muted by default
-  loop: true
-```
+Key config options:
+- `detection.detect_ides`: `true` / `false`
+- `study_sites.keywords`: add custom domain keywords
+- `youtube.study_mode`: toggle YouTube detection
+- `gameplay.width_percent`: side panel width (e.g. `25` for 25% of screen)
+- `gameplay.volume`: `0` for muted, `100` for max volume
 
 ---
 
-## 🏗️ Project Architecture
+## Science & Reference
 
-```text
-study-companion/
-├── config.default.yaml      # Default system configuration
-├── requirements.txt         # Python package dependencies
-├── src/
-│   ├── __main__.py          # CLI entry point module
-│   ├── main.py              # Main orchestrator loop
-│   ├── detector.py          # X11 Window detector (python-xlib)
-│   ├── classifier.py        # Activity classifier engine
-│   ├── player.py            # mpv subprocess window controller
-│   ├── arranger.py          # Window geometry tiler (wmctrl)
-│   ├── tray.py              # AyatanaAppIndicator system tray
-│   ├── config.py            # YAML configuration loader
-│   └── logger.py            # Colored logging system
-├── tests/
-│   └── test_classifier.py   # Unit test suite (28 tests)
-└── gameplay/                # Local gameplay video directories
-```
+> **Schuetze, B. A. et al. (2026).** *Split-screen distraction: the role of extraneous visual demands in learning from video.*  
+> **Journal:** *Cognitive Research: Principles and Implications*, 11(1).  
+> **Link:** [PubMed PMID: 41880123](https://pubmed.ncbi.nlm.nih.gov/41880123/) | **DOI:** [10.1186/s41235-026-00720-2](https://doi.org/10.1186/s41235-026-00720-2) | **PMCID:** [PMC13018501](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC13018501/)
 
 ---
 
-## 🧪 Testing
+## License
 
-Run the automated test suite with `pytest`:
-
-```bash
-python3 -m pytest tests/ -v
-```
-
----
-
-## 📜 License
-
-Distributed under the MIT License. See `LICENSE` for more information.
+[MIT](LICENSE)
