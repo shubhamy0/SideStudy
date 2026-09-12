@@ -6,16 +6,20 @@ Runs the full Study Companion loop:
   3. If study: arrange windows + start gameplay
   4. If not study: stop gameplay + restore layout
 
+The system tray runs on the GTK main thread, while detection
+runs in a background thread.
+
 Usage:
-    python3 -m src.main [--config PATH] [--debug] [--detect-only]
+    python3 -m src.main [--config PATH] [--debug] [--detect-only] [--play-only] [--no-tray]
 """
 
 import argparse
 import signal
 import sys
+import threading
 import time
 
-from src.config import load_config
+from src.config import load_config, Config
 from src.detector import WindowDetector
 from src.classifier import ActivityClassifier, ClassificationResult
 from src.player import GameplayPlayer
@@ -30,25 +34,24 @@ def parse_args() -> argparse.Namespace:
         description="Study Companion — Detect study activities and play gameplay alongside",
     )
     parser.add_argument(
-        "--config",
-        type=str,
-        default=None,
-        help="Path to config YAML file (default: config.yaml or config.default.yaml)",
+        "--config", type=str, default=None,
+        help="Path to config YAML file",
     )
     parser.add_argument(
-        "--debug",
-        action="store_true",
+        "--debug", action="store_true",
         help="Enable debug logging",
     )
     parser.add_argument(
-        "--detect-only",
-        action="store_true",
+        "--detect-only", action="store_true",
         help="Only detect study activity, don't arrange windows or play videos",
     )
     parser.add_argument(
-        "--play-only",
-        action="store_true",
+        "--play-only", action="store_true",
         help="Only play gameplay video (for testing the player)",
+    )
+    parser.add_argument(
+        "--no-tray", action="store_true",
+        help="Run without the system tray icon",
     )
     return parser.parse_args()
 
@@ -79,7 +82,7 @@ def format_status(result: ClassificationResult, window_title: str, wm_class: str
     return "\n".join(lines)
 
 
-def run_play_only(config) -> None:
+def run_play_only(config: Config) -> None:
     """Test mode: just play a gameplay video and wait."""
     log = get_logger("main")
     c = _Colors
@@ -90,7 +93,6 @@ def run_play_only(config) -> None:
     player = GameplayPlayer(config)
     arranger = WindowArranger(config)
 
-    # Get gameplay position
     gx, gy, gw, gh = arranger.get_gameplay_geometry()
     print(f"  Gameplay area: {gw}x{gh} at +{gx}+{gy}")
 
@@ -105,7 +107,6 @@ def run_play_only(config) -> None:
     def handle_signal(signum, frame):
         nonlocal running
         running = False
-
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
@@ -116,7 +117,7 @@ def run_play_only(config) -> None:
     print(f"\n{c.YELLOW}Playback stopped.{c.RESET}")
 
 
-def run_detect_only(config) -> None:
+def run_detect_only(config: Config) -> None:
     """Detection-only mode: just print what's detected."""
     log = get_logger("main")
     c = _Colors
@@ -134,7 +135,6 @@ def run_detect_only(config) -> None:
         nonlocal running
         running = False
         print(f"\n{c.YELLOW}Shutting down...{c.RESET}")
-
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
@@ -153,17 +153,10 @@ def run_detect_only(config) -> None:
                 or result.is_study != last_result.is_study
                 or result.activity_name != last_result.activity_name
             )
-
             if changed:
                 title = window.title if window else "(none)"
                 wm_class = window.wm_class if window else "(none)"
                 print(format_status(result, title, wm_class))
-
-                if result.is_study and (last_result is None or not last_result.is_study):
-                    log.info("Study activity STARTED: %s", result.activity_name)
-                elif not result.is_study and last_result is not None and last_result.is_study:
-                    log.info("Study activity ENDED")
-
                 last_result = result
 
             time.sleep(config.general.poll_interval)
@@ -172,109 +165,242 @@ def run_detect_only(config) -> None:
         log.info("Study Companion stopped.")
 
 
-def run_full(config) -> None:
-    """Full mode: detect → arrange → play → restore."""
-    log = get_logger("main")
-    c = _Colors
+class StudyCompanionApp:
+    """Main application class that ties everything together.
 
-    detector = WindowDetector()
-    if not detector.is_connected:
-        log.error("Cannot connect to X11 display. Is X11 running?")
-        sys.exit(1)
+    Runs the detection loop in a background thread and optionally
+    manages a system tray on the GTK main thread.
+    """
 
-    classifier = ActivityClassifier(config)
-    player = GameplayPlayer(config)
-    arranger = WindowArranger(config)
+    def __init__(self, config: Config, use_tray: bool = True) -> None:
+        self._config = config
+        self._use_tray = use_tray
+        self._log = get_logger("main")
+        self._c = _Colors
 
-    last_result: ClassificationResult | None = None
-    study_active = False
-    debounce_counter = 0
-    running = True
+        # Components
+        self._detector = WindowDetector()
+        self._classifier = ActivityClassifier(config)
+        self._player = GameplayPlayer(config)
+        self._arranger = WindowArranger(config)
+        self._tray = None
 
-    def handle_signal(signum, frame):
-        nonlocal running
-        running = False
-        print(f"\n{c.YELLOW}Shutting down...{c.RESET}")
+        # State
+        self._running = False
+        self._study_active = False
+        self._debounce_counter = 0
+        self._enabled = config.general.enabled
+        self._detection_thread: threading.Thread | None = None
 
-    signal.signal(signal.SIGINT, handle_signal)
-    signal.signal(signal.SIGTERM, handle_signal)
+    def _on_toggle_enabled(self, enabled: bool) -> None:
+        """Handle enable/disable toggle from tray."""
+        self._enabled = enabled
+        self._log.info("Study Companion %s", "enabled" if enabled else "disabled")
+        if not enabled and self._study_active:
+            self._end_study()
 
-    print(f"\n{c.BOLD}{c.CYAN}╔══════════════════════════════════════════════════╗{c.RESET}")
-    print(f"{c.BOLD}{c.CYAN}║        📚 Study Companion — Full Mode            ║{c.RESET}")
-    print(f"{c.BOLD}{c.CYAN}╚══════════════════════════════════════════════════╝{c.RESET}")
-    print(f"{c.DIM}  Monitoring & managing windows... (Ctrl+C to stop){c.RESET}\n")
+    def _on_toggle_youtube(self, youtube_on: bool) -> None:
+        """Handle YouTube study mode toggle from tray."""
+        self._config.youtube.study_mode = youtube_on
+        self._classifier.update_config(self._config)
+        self._log.info("YouTube Study Mode: %s", "ON" if youtube_on else "OFF")
 
-    try:
-        while running:
-            window = detector.get_active_window()
-            result = classifier.classify(window)
+    def _on_change_category(self, category: str) -> None:
+        """Handle gameplay category change from tray."""
+        self._config.gameplay.category = category
+        self._player.update_config(self._config)
+        self._log.info("Gameplay category: %s", category)
+        # Restart player with new category if currently playing
+        if self._player.is_playing:
+            self._player.stop()
+            gx, gy, gw, gh = self._arranger.get_gameplay_geometry()
+            self._player.start(category=category, x=gx, y=gy, width=gw, height=gh)
 
-            # Debounce: require consistent state for N polls
-            if result.is_study != study_active:
-                debounce_counter += 1
-                if debounce_counter < config.general.debounce_count:
-                    time.sleep(config.general.poll_interval)
+    def _on_quit(self) -> None:
+        """Handle quit from tray."""
+        self._running = False
+
+    def _start_study(self, window) -> None:
+        """Activate study mode: arrange windows and start gameplay."""
+        self._study_active = True
+
+        if window and self._config.gameplay.autoplay:
+            self._arranger.arrange(window.window_id)
+            gx, gy, gw, gh = self._arranger.get_gameplay_geometry()
+            self._player.start(x=gx, y=gy, width=gw, height=gh)
+
+        if self._tray:
+            self._tray.update_status(True, self._current_activity_name)
+
+    def _end_study(self) -> None:
+        """Deactivate study mode: stop gameplay and restore layout."""
+        self._study_active = False
+
+        if self._player.is_playing:
+            self._player.stop()
+        if self._arranger.is_arranged:
+            self._arranger.restore()
+
+        if self._tray:
+            self._tray.update_status(False, "")
+
+    def _detection_loop(self) -> None:
+        """Background thread: poll active window and manage study mode."""
+        c = self._c
+        last_result: ClassificationResult | None = None
+        self._current_activity_name = ""
+
+        self._log.info("Detection loop started")
+
+        while self._running:
+            try:
+                if not self._enabled:
+                    time.sleep(self._config.general.poll_interval)
                     continue
-            else:
-                debounce_counter = 0
 
-            # State change detected (after debounce)
-            changed = result.is_study != study_active
+                window = self._detector.get_active_window()
 
-            if changed:
-                title = window.title if window else "(none)"
-                wm_class = window.wm_class if window else "(none)"
-                print(format_status(result, title, wm_class))
+                # Skip if the active window is our gameplay window
+                if window and window.title == "StudyCompanion-Gameplay":
+                    time.sleep(self._config.general.poll_interval)
+                    continue
 
-                if result.is_study and not study_active:
-                    # === STUDY STARTED ===
-                    log.info("Study activity STARTED: %s", result.activity_name)
-                    study_active = True
+                result = self._classifier.classify(window)
 
-                    if window and config.gameplay.autoplay:
-                        # Arrange the study window
-                        arranger.arrange(window.window_id)
+                # Debounce: require consistent state change
+                if result.is_study != self._study_active:
+                    self._debounce_counter += 1
+                    if self._debounce_counter < self._config.general.debounce_count:
+                        time.sleep(self._config.general.poll_interval)
+                        continue
+                else:
+                    self._debounce_counter = 0
 
-                        # Start gameplay in the right panel
-                        gx, gy, gw, gh = arranger.get_gameplay_geometry()
-                        player.start(x=gx, y=gy, width=gw, height=gh)
+                # State change (after debounce)
+                changed = result.is_study != self._study_active
 
-                elif not result.is_study and study_active:
-                    # === STUDY ENDED ===
-                    log.info("Study activity ENDED")
-                    study_active = False
+                if changed:
+                    title = window.title if window else "(none)"
+                    wm_class = window.wm_class if window else "(none)"
+                    print(format_status(result, title, wm_class))
 
-                    # Stop gameplay
-                    player.stop()
+                    if result.is_study and not self._study_active:
+                        self._log.info("Study STARTED: %s", result.activity_name)
+                        self._current_activity_name = result.activity_name
+                        self._start_study(window)
 
-                    # Restore window layout
-                    arranger.restore()
+                    elif not result.is_study and self._study_active:
+                        self._log.info("Study ENDED")
+                        self._current_activity_name = ""
+                        self._end_study()
 
-                debounce_counter = 0
+                    self._debounce_counter = 0
 
-            # Also print when activity changes within study mode
-            elif (
-                last_result is not None
-                and result.activity_name != last_result.activity_name
-            ):
-                title = window.title if window else "(none)"
-                wm_class = window.wm_class if window else "(none)"
-                print(format_status(result, title, wm_class))
+                # Activity change within study mode
+                elif (
+                    last_result is not None
+                    and result.activity_name != last_result.activity_name
+                ):
+                    title = window.title if window else "(none)"
+                    wm_class = window.wm_class if window else "(none)"
+                    print(format_status(result, title, wm_class))
 
-            last_result = result
-            time.sleep(config.general.poll_interval)
+                    if result.is_study:
+                        self._current_activity_name = result.activity_name
+                        if self._tray:
+                            self._tray.update_status(True, result.activity_name)
 
-    except Exception as e:
-        log.error("Unexpected error: %s", e)
-        raise
-    finally:
-        # Clean shutdown
-        if player.is_playing:
-            player.stop()
-        if arranger.is_arranged:
-            arranger.restore()
-        detector.close()
-        log.info("Study Companion stopped.")
+                last_result = result
+
+            except Exception as e:
+                self._log.error("Detection loop error: %s", e)
+
+            time.sleep(self._config.general.poll_interval)
+
+        self._log.info("Detection loop stopped")
+
+    def _cleanup(self) -> None:
+        """Clean shutdown."""
+        if self._player.is_playing:
+            self._player.stop()
+        if self._arranger.is_arranged:
+            self._arranger.restore()
+        self._detector.close()
+        self._log.info("Study Companion stopped.")
+
+    def run(self) -> None:
+        """Run the application."""
+        c = self._c
+
+        if not self._detector.is_connected:
+            self._log.error("Cannot connect to X11 display.")
+            sys.exit(1)
+
+        self._running = True
+
+        print(f"\n{c.BOLD}{c.CYAN}╔══════════════════════════════════════════════════╗{c.RESET}")
+        print(f"{c.BOLD}{c.CYAN}║         📚 Study Companion v0.1.0                ║{c.RESET}")
+        print(f"{c.BOLD}{c.CYAN}╚══════════════════════════════════════════════════╝{c.RESET}")
+        mode = "Full Mode + System Tray" if self._use_tray else "Full Mode (no tray)"
+        print(f"{c.DIM}  {mode} — Ctrl+C to stop{c.RESET}\n")
+
+        # Start detection in background thread
+        self._detection_thread = threading.Thread(
+            target=self._detection_loop,
+            daemon=True,
+            name="detection-loop",
+        )
+        self._detection_thread.start()
+
+        if self._use_tray:
+            try:
+                import gi
+                gi.require_version("Gtk", "3.0")
+                from gi.repository import Gtk, GLib
+
+                from src.tray import SystemTray
+
+                self._tray = SystemTray(
+                    config=self._config,
+                    on_toggle_enabled=self._on_toggle_enabled,
+                    on_toggle_youtube=self._on_toggle_youtube,
+                    on_change_category=self._on_change_category,
+                    on_quit=self._on_quit,
+                )
+                self._tray.run()
+
+                # Handle SIGINT/SIGTERM gracefully with GTK
+                def signal_handler(signum, frame):
+                    self._running = False
+                    self._tray.quit()
+
+                signal.signal(signal.SIGINT, signal_handler)
+                signal.signal(signal.SIGTERM, signal_handler)
+
+                # Run GTK main loop (blocks until quit)
+                Gtk.main()
+
+            except Exception as e:
+                self._log.warning("System tray failed: %s. Running without tray.", e)
+                self._use_tray = False
+
+        if not self._use_tray:
+            # No tray mode — just wait for signal
+            def signal_handler(signum, frame):
+                self._running = False
+                print(f"\n{c.YELLOW}Shutting down...{c.RESET}")
+
+            signal.signal(signal.SIGINT, signal_handler)
+            signal.signal(signal.SIGTERM, signal_handler)
+
+            while self._running:
+                time.sleep(0.5)
+
+        # Cleanup
+        self._running = False
+        if self._detection_thread:
+            self._detection_thread.join(timeout=5)
+        self._cleanup()
 
 
 def main() -> None:
@@ -294,7 +420,8 @@ def main() -> None:
     elif args.detect_only:
         run_detect_only(config)
     else:
-        run_full(config)
+        app = StudyCompanionApp(config, use_tray=not args.no_tray)
+        app.run()
 
 
 if __name__ == "__main__":
